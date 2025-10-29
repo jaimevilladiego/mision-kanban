@@ -1,71 +1,195 @@
 import streamlit as st
-import time, random
+import random
+import time
+import pandas as pd
 
-st.set_page_config(page_title="🎯 Misión Kanban", page_icon="🧠", layout="centered")
+# ----------------------------
+# CONFIGURACIÓN INICIAL
+# ----------------------------
+st.set_page_config(page_title="Misión Kanban", page_icon="🚀", layout="wide")
 
-st.title("🎯 Misión Kanban – Competencia Ágil")
-st.write("¡Bienvenido! Compite en tiempo real respondiendo preguntas sobre Kanban. Gana puntos según tu rapidez y precisión.")
+# Estilo visual
+st.markdown("""
+    <style>
+    body { background-color: #F9FAFB; color: #1F2937; }
+    .stButton>button {
+        background-color: #3B82F6;
+        color: white;
+        border-radius: 10px;
+        padding: 0.6em 1em;
+        font-weight: bold;
+    }
+    .stProgress > div > div {
+        background-color: #10B981;
+    }
+    .block-container {padding-top: 1rem;}
+    </style>
+""", unsafe_allow_html=True)
 
+# ----------------------------
+# DATOS DE JUEGO
+# ----------------------------
 if "jugadores" not in st.session_state:
     st.session_state.jugadores = {}
-if "started" not in st.session_state:
-    st.session_state.started = False
+if "jugador_actual" not in st.session_state:
+    st.session_state.jugador_actual = None
 if "pregunta_actual" not in st.session_state:
     st.session_state.pregunta_actual = 0
+if "inicio_tiempo" not in st.session_state:
+    st.session_state.inicio_tiempo = None
 
+# Preguntas / retos (puedes ampliarlas fácilmente)
 preguntas = [
-    {"nivel": "1️⃣ Aprendiz Kanban","pregunta": "¿Qué representa una tarjeta en Kanban?","opciones": ["Una tarea o trabajo","Un equipo de trabajo","Un tablero completo","Un sprint"],"respuesta": 0},
-    {"nivel": "2️⃣ Colaborador Kanban","pregunta": "¿Qué busca limitar el WIP (Work In Progress)?","opciones": ["La cantidad de tareas activas","El número de personas","La calidad del producto","La duración del sprint"],"respuesta": 0},
-    {"nivel": "3️⃣ Líder de Flujo","pregunta": "Un cuello de botella ocurre cuando...","opciones": ["Hay más tareas que capacidad en una etapa","El equipo trabaja más rápido","Se termina todo el trabajo","El tablero está vacío"],"respuesta": 0},
-    {"nivel": "4️⃣ Sensei Kanban","pregunta": "Si una etapa está siempre llena, ¿qué deberías hacer?","opciones": ["Reducir el WIP o mejorar esa etapa","Ignorarla","Mover tareas sin analizar","Eliminar esa columna"],"respuesta": 0},
-    {"nivel": "5️⃣ Maestro Ágil","pregunta": "El objetivo principal de Kanban es...","opciones": ["Mejorar el flujo de trabajo","Planificar más rápido","Agregar tareas constantemente","Evitar reuniones"],"respuesta": 0},
+    {
+        "nivel": "🟢 Aprendiz",
+        "texto": "¿Cuál es el propósito principal del método Kanban?",
+        "opciones": [
+            "Aumentar el trabajo en curso",
+            "Visualizar el flujo de trabajo y limitar el WIP",
+            "Eliminar reuniones",
+            "Asignar más tareas por persona"
+        ],
+        "respuesta": "Visualizar el flujo de trabajo y limitar el WIP"
+    },
+    {
+        "nivel": "🔵 Colaborador",
+        "texto": "En Kanban, el límite WIP (Work In Progress) sirve para...",
+        "opciones": [
+            "Evitar que las tareas se acumulen",
+            "Aumentar el ritmo de trabajo",
+            "Permitir multitareas simultáneas",
+            "Reducir la comunicación"
+        ],
+        "respuesta": "Evitar que las tareas se acumulen"
+    },
+    {
+        "nivel": "🟣 Líder",
+        "texto": "Un equipo detecta un cuello de botella en la columna 'En progreso'. ¿Qué debería hacer primero?",
+        "opciones": [
+            "Ignorarlo hasta el final del sprint",
+            "Reducir el WIP o reasignar recursos",
+            "Agregar más tareas",
+            "Aumentar la velocidad de entrega"
+        ],
+        "respuesta": "Reducir el WIP o reasignar recursos"
+    },
+    {
+        "nivel": "🟠 Sensei",
+        "texto": "En Kanban, ¿qué principio fomenta la mejora continua?",
+        "opciones": [
+            "Kaizen",
+            "Muda",
+            "Takt Time",
+            "Scrum"
+        ],
+        "respuesta": "Kaizen"
+    },
+    {
+        "nivel": "🔴 Maestro",
+        "texto": "El indicador 'Lead Time' mide...",
+        "opciones": [
+            "El tiempo que tarda una tarea desde que se inicia hasta que se entrega",
+            "La cantidad de tareas asignadas por persona",
+            "El costo por tarea completada",
+            "La eficiencia del Scrum Master"
+        ],
+        "respuesta": "El tiempo que tarda una tarea desde que se inicia hasta que se entrega"
+    }
 ]
 
-if not st.session_state.started:
-    nombre = st.text_input("Ingresa tu nombre para unirte a la misión:")
-    if st.button("Unirme al juego 🚀") and nombre:
-        if nombre not in st.session_state.jugadores:
-            st.session_state.jugadores[nombre] = {"puntos": 0, "tiempo": 0}
-            st.success(f"Bienvenido, {nombre}! Espera a que inicie la misión.")
-        else:
-            st.warning("Ya estás registrado.")
-    st.write(f"Jugadores conectados: {len(st.session_state.jugadores)}")
-    st.write(list(st.session_state.jugadores.keys()))
+# ----------------------------
+# FUNCIÓN PARA MOSTRAR TABLERO KANBAN
+# ----------------------------
+def mostrar_tablero(pregunta_actual):
+    st.markdown("### 🧩 Tablero Kanban del Progreso")
+    kanban = {
+        "Por hacer": [f"Desafío {i+1}" for i in range(pregunta_actual, len(preguntas))],
+        "En progreso": [f"Desafío {pregunta_actual + 1}"] if pregunta_actual < len(preguntas) else [],
+        "Hecho": [f"Desafío {i+1}" for i in range(pregunta_actual)]
+    }
+    cols = st.columns(3)
+    for i, col_name in enumerate(kanban):
+        with cols[i]:
+            st.subheader(col_name)
+            for tarea in kanban[col_name]:
+                st.markdown(f"✅ {tarea}" if col_name == "Hecho" else f"🔹 {tarea}")
 
-if st.button("Iniciar misión (solo el organizador) 🧭"):
-    st.session_state.started = True
-    st.session_state.pregunta_actual = 0
-    st.success("¡La misión ha comenzado!")
+# ----------------------------
+# INICIO DEL JUEGO
+# ----------------------------
+st.title("🚀 Misión Kanban 2.0")
+st.markdown("Bienvenido al desafío interactivo sobre la metodología **Kanban Ágil**. Supera los retos, gana puntos y demuestra tu dominio del flujo continuo 💪.")
 
-if st.session_state.started:
-    actual = st.session_state.pregunta_actual
-    if actual < len(preguntas):
-        q = preguntas[actual]
-        st.subheader(q["nivel"])
-        st.markdown(f"### {q['pregunta']}")
+jugador = st.text_input("Ingresa tu nombre para comenzar:")
 
-        start_time = time.time()
-        opcion = st.radio("Selecciona tu respuesta:", q["opciones"], key=f"resp_{actual}")
-        if st.button("Enviar respuesta ✅", key=f"btn_{actual}"):
-            tiempo = time.time() - start_time
-            correcto = q["opciones"].index(opcion) == q["respuesta"]
-            puntos = max(0, int(100 - tiempo * 10)) if correcto else 0
-
-            usuario = list(st.session_state.jugadores.keys())[-1]
-            st.session_state.jugadores[usuario]["puntos"] += puntos
-            st.session_state.jugadores[usuario]["tiempo"] += tiempo
-
-            if correcto:
-                st.success(f"✅ ¡Correcto! +{puntos} puntos.")
+if jugador:
+    st.session_state.jugador_actual = jugador
+    if jugador not in st.session_state.jugadores:
+        st.session_state.jugadores[jugador] = {"puntos": 0, "tiempo": 0}
+    
+    mostrar_tablero(st.session_state.pregunta_actual)
+    
+    # Avance de preguntas
+    if st.session_state.pregunta_actual < len(preguntas):
+        pregunta = preguntas[st.session_state.pregunta_actual]
+        st.subheader(f"Nivel {pregunta['nivel']}")
+        st.markdown(f"**{pregunta['texto']}**")
+        
+        st.session_state.inicio_tiempo = time.time()
+        respuesta = st.radio("Selecciona una respuesta:", pregunta["opciones"])
+        
+        if st.button("Responder"):
+            tiempo_respuesta = time.time() - st.session_state.inicio_tiempo
+            jugador_data = st.session_state.jugadores[jugador]
+            
+            # Evento aleatorio
+            eventos = [
+                ("⚠️ Un bloqueo detiene el flujo, pierdes 3 segundos", -3),
+                ("🚀 Trabajo urgente completado, +10 puntos", 10),
+                ("💡 Mejora continua: respuesta rápida vale doble", 2)
+            ]
+            if random.random() < 0.25:
+                evento, efecto = random.choice(eventos)
+                st.warning(evento)
+                if efecto == 2:
+                    multiplicador = 2
+                elif efecto > 0:
+                    jugador_data["puntos"] += efecto
+                    multiplicador = 1
+                else:
+                    tiempo_respuesta -= efecto  # penalización en tiempo
+                    multiplicador = 1
             else:
-                st.error("❌ Incorrecto.")
-
+                multiplicador = 1
+            
+            # Verificar respuesta
+            if respuesta == pregunta["respuesta"]:
+                puntos = int(max(5, 20 - tiempo_respuesta)) * multiplicador
+                jugador_data["puntos"] += puntos
+                st.success(f"✅ ¡Correcto! +{puntos} puntos")
+            else:
+                st.error("❌ Incorrecto. Sigue aprendiendo del flujo Kanban.")
+            
+            jugador_data["tiempo"] += tiempo_respuesta
             st.session_state.pregunta_actual += 1
-            time.sleep(1)
             st.rerun()
+    
     else:
-        st.header("🏁 ¡Misión completada!")
-        ranking = sorted(st.session_state.jugadores.items(), key=lambda x: x[1]["puntos"], reverse=True)
+        # Final del juego
+        st.balloons()
+        st.header("🎉 ¡Misión completada!")
+        st.write("Has terminado todos los desafíos Kanban.")
+        
+        # Mostrar ranking
         st.subheader("🏆 Ranking Final")
+        ranking = sorted(st.session_state.jugadores.items(), key=lambda x: (x[1]["puntos"], -x[1]["tiempo"]), reverse=True)
         for i, (nombre, datos) in enumerate(ranking, 1):
-            st.write(f"**{i}. {nombre}** – {datos['puntos']} pts ⏱ {round(datos['tiempo'], 2)} s")
+            st.write(f"{i}. {nombre} — {datos['puntos']} pts — ⏱️ {round(datos['tiempo'],1)} s")
+        
+        # Descargar resultados
+        ranking_df = pd.DataFrame([
+            {"Jugador": n, "Puntos": d["puntos"], "Tiempo": round(d["tiempo"], 2)}
+            for n, d in ranking
+        ])
+        st.download_button("⬇️ Descargar resultados", ranking_df.to_csv(index=False), "ranking_kanban.csv")
+
